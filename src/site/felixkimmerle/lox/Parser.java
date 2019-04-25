@@ -2,6 +2,7 @@ package site.felixkimmerle.lox;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.List;
 
 import static site.felixkimmerle.lox.TokenType.*;
@@ -29,7 +30,9 @@ public class Parser {
 
     private Stmt declaration() {
         try {
+            if (match(CLASS)) return classDeclaration();
             if (match(VAR)) return varDeclaration();
+            if (check(FUN) && checkNext(IDENTIFIER)) return function("function");
 
             return statement();
         } catch (ParseError error) {
@@ -38,10 +41,56 @@ public class Parser {
         }
     }
 
+    private Stmt classDeclaration() {
+        Token name = consume(IDENTIFIER, "Expect class name.");
+        consume(LEFT_BRACE, "Expect '{' before class body.");
+
+        List<Stmt.Function> methods = new ArrayList<>();
+        List<Stmt.Function> classMethods = new ArrayList<>();
+
+        while (!check(RIGHT_BRACE) && !isAtEnd()) {
+            if(match(CLASS))
+            {
+                classMethods.add(function("method"));
+            }
+            else
+            {
+                methods.add(function("method"));
+            }
+        }
+
+        consume(RIGHT_BRACE, "Expect '}' after class body.");
+
+        return new Stmt.Class(name, methods,classMethods);
+    }
+
+    private Stmt.Function function(String kind) {
+        match(FUN);
+        Token name = consume(IDENTIFIER, "Expect " + kind + " name.");
+        consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+        List<Token> parameters = new ArrayList<>();
+        if (!check(RIGHT_PAREN)) {
+            do {
+                if (parameters.size() >= 8) {
+                    error(peek(), "Cannot have more than 8 parameters.");
+                }
+
+                parameters.add(consume(IDENTIFIER, "Expect parameter name."));
+            } while (match(COMMA));
+        }
+
+        consume(RIGHT_PAREN, "Expect ')' after parameters.");
+
+        consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
+        List<Stmt> body = block();
+        return new Stmt.Function(name, parameters, body);
+    }
+
     private Stmt statement() {
         if (match(FOR)) return forStatement();
         if (match(IF)) return ifStatement();
         if (match(PRINT)) return printStatement();
+        if (match(RETURN)) return returnStatement();
         if (match(WHILE)) return whileStatement();
         if (match(BREAK)) return breakStatement();
         if (match(CONTINUE)) return continueStatement();
@@ -81,21 +130,19 @@ public class Parser {
         if (condition == null) {
             condition = new Expr.Literal(true);
         }
-        body = new Stmt.For(initializer,condition,increment, body);
+        body = new Stmt.For(initializer, condition, increment, body);
 
 
         return body;
     }
 
-    private Stmt breakStatement()
-    {
-        consume(SEMICOLON,"Expect ';' after break.");
+    private Stmt breakStatement() {
+        consume(SEMICOLON, "Expect ';' after break.");
         return new Stmt.Break();
     }
 
-    private Stmt continueStatement()
-    {
-        consume(SEMICOLON,"Expect ';' after continue.");
+    private Stmt continueStatement() {
+        consume(SEMICOLON, "Expect ';' after continue.");
         return new Stmt.Continue();
     }
 
@@ -118,6 +165,16 @@ public class Parser {
         Expr value = expression();
         consume(SEMICOLON, "Expect ';' after value.");
         return new Stmt.Print(value);
+    }
+
+    private Stmt returnStatement() {
+        Token keyword = previous();
+        Expr value = null;
+        if (!check(SEMICOLON)) {
+            value = expression();
+        }
+        consume(SEMICOLON, "Expect ';' after return value.");
+        return new Stmt.Return(keyword, value);
     }
 
     private Stmt varDeclaration() {
@@ -172,6 +229,17 @@ public class Parser {
         return left;
     }
 
+    private Expr fucexpression() {
+        Expr left = assignment();
+        if (match(QUESTIONMARK)) {
+            Expr ontrue = expression();
+            consume(COLON, "Ternary operator need a colon.");
+            Expr onfalse = expression();
+            return new Expr.Ternary(left, ontrue, onfalse);
+        }
+        return left;
+    }
+
     private Expr assignment() {
         Expr expr = or();
 
@@ -182,6 +250,9 @@ public class Parser {
             if (expr instanceof Expr.Variable) {
                 Token name = ((Expr.Variable) expr).name;
                 return new Expr.Assign(name, value);
+            } else if (expr instanceof Expr.Get) {
+                Expr.Get get = (Expr.Get) expr;
+                return new Expr.Set(get.object, get.name, value);
             }
 
             error(equals, "Invalid assignment target.");
@@ -269,18 +340,72 @@ public class Parser {
             return new Expr.Unary(operator, right);
         }
 
-        return primary();
+        return call();
+    }
+
+    private Expr call() {
+        Expr expr = primary();
+
+        while (true) {
+            if (match(LEFT_PAREN)) {
+                expr = finishCall(expr);
+            } else if (match(DOT)) {
+                Token name = consume(IDENTIFIER, "Expect property name after '.'.");
+                expr = new Expr.Get(expr, name);
+            } else {
+                break;
+            }
+        }
+        return expr;
+    }
+
+    private Expr finishCall(Expr callee) {
+        List<Expr> arguments = new ArrayList<>();
+        if (!check(RIGHT_PAREN)) {
+            do {
+                if (arguments.size() >= 8) {
+                    error(peek(), "Cannot have more than 8 arguments");
+                }
+                arguments.add(fucexpression());
+            } while (match(COMMA));
+        }
+
+        Token paren = consume(RIGHT_PAREN, "Expect ')' after arguments.");
+        return new Expr.Call(callee, paren, arguments);
+    }
+
+    private Expr lambda(String kind) {
+        consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+        List<Token> parameters = new ArrayList<>();
+        if (!check(RIGHT_PAREN)) {
+            do {
+                if (parameters.size() >= 8) {
+                    error(peek(), "Cannot have more than 8 parameters.");
+                }
+
+                parameters.add(consume(IDENTIFIER, "Expect parameter name."));
+            } while (match(COMMA));
+        }
+
+        consume(RIGHT_PAREN, "Expect ')' after parameters.");
+
+        consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
+        List<Stmt> body = block();
+        return new Expr.Lambda(parameters, body);
     }
 
     private Expr primary() {
         if (match(FALSE)) return new Expr.Literal(false);
         if (match(TRUE)) return new Expr.Literal(true);
         if (match(NIL)) return new Expr.Literal(null);
+        if (match(FUN)) return lambda("function");
 
         if (match(NUMBER, STRING)) {
             return new Expr.Literal(previous().literal);
         }
-
+        if (match(THIS)){
+            return new Expr.This(previous());
+        }
         if (match(IDENTIFIER)) {
             return new Expr.Variable(previous());
         }
@@ -343,6 +468,10 @@ public class Parser {
         return peek().type == type;
     }
 
+    private boolean checkNext(TokenType type) {
+        return next().type == type;
+    }
+
     private Token advance() {
         if (!isAtEnd()) current++;
         return previous();
@@ -358,6 +487,13 @@ public class Parser {
 
     private Token previous() {
         return tokens.get(current - 1);
+    }
+
+    private Token next() {
+        if (current + 1 < tokens.size()) {
+            return tokens.get(current + 1);
+        }
+        return null;
     }
 
 }
