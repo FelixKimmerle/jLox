@@ -32,7 +32,10 @@ public class Parser {
         try {
             if (match(CLASS)) return classDeclaration();
             if (match(VAR)) return varDeclaration();
-            if (check(FUN) && checkNext(IDENTIFIER)) return function("function");
+            if (check(FUN) && checkNext(IDENTIFIER)){
+                consume(FUN,null);
+                return function("function");
+            }
 
             return statement();
         } catch (ParseError error) {
@@ -65,26 +68,33 @@ public class Parser {
     }
 
     private Stmt.Function function(String kind) {
-        match(FUN);
         Token name = consume(IDENTIFIER, "Expect " + kind + " name.");
-        consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
-        List<Token> parameters = new ArrayList<>();
-        if (!check(RIGHT_PAREN)) {
-            do {
-                if (parameters.size() >= 8) {
-                    error(peek(), "Cannot have more than 8 parameters.");
-                }
+        return new Stmt.Function(name, functionBody(kind));
+    }
 
-                parameters.add(consume(IDENTIFIER, "Expect parameter name."));
-            } while (match(COMMA));
+    private Expr.Function functionBody(String kind) {
+        List<Token> parameters = null;
+
+        if(!kind.equals("method") || check(LEFT_PAREN)) {
+            consume(LEFT_PAREN,"Expect '(' after" + kind + " name.");
+            parameters = new ArrayList<>();
+            if (!check(RIGHT_PAREN)) {
+                do {
+                    if (parameters.size() >= 8) {
+                        error(peek(), "Cannot have more than 8 parameters.");
+                    }
+
+                    parameters.add(consume(IDENTIFIER, "Expect parameter name."));
+                } while (match(COMMA));
+            }
+
+            consume(RIGHT_PAREN, "Expect ')' after parameters.");
         }
-
-        consume(RIGHT_PAREN, "Expect ')' after parameters.");
-
         consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
         List<Stmt> body = block();
-        return new Stmt.Function(name, parameters, body);
+        return new Expr.Function(parameters, body);
     }
+
 
     private Stmt statement() {
         if (match(FOR)) return forStatement();
@@ -374,31 +384,11 @@ public class Parser {
         return new Expr.Call(callee, paren, arguments);
     }
 
-    private Expr lambda(String kind) {
-        consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
-        List<Token> parameters = new ArrayList<>();
-        if (!check(RIGHT_PAREN)) {
-            do {
-                if (parameters.size() >= 8) {
-                    error(peek(), "Cannot have more than 8 parameters.");
-                }
-
-                parameters.add(consume(IDENTIFIER, "Expect parameter name."));
-            } while (match(COMMA));
-        }
-
-        consume(RIGHT_PAREN, "Expect ')' after parameters.");
-
-        consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
-        List<Stmt> body = block();
-        return new Expr.Lambda(parameters, body);
-    }
-
     private Expr primary() {
         if (match(FALSE)) return new Expr.Literal(false);
         if (match(TRUE)) return new Expr.Literal(true);
         if (match(NIL)) return new Expr.Literal(null);
-        if (match(FUN)) return lambda("function");
+        if (match(FUN)) return functionBody("function");
 
         if (match(NUMBER, STRING)) {
             return new Expr.Literal(previous().literal);
@@ -468,9 +458,6 @@ public class Parser {
         return peek().type == type;
     }
 
-    private boolean checkNext(TokenType type) {
-        return next().type == type;
-    }
 
     private Token advance() {
         if (!isAtEnd()) current++;
@@ -489,11 +476,10 @@ public class Parser {
         return tokens.get(current - 1);
     }
 
-    private Token next() {
-        if (current + 1 < tokens.size()) {
-            return tokens.get(current + 1);
-        }
-        return null;
+    private boolean checkNext(TokenType tokenType) {
+        if (isAtEnd()) return false;
+        if (tokens.get(current + 1).type == EOF) return false;
+        return tokens.get(current + 1).type == tokenType;
     }
 
 }

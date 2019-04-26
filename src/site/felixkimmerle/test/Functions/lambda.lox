@@ -1,0 +1,14 @@
+var t = fun (a,b,c) {
+    return a+b+c;
+};
+
+print t;
+print t(1,2,3);
+
+fun takelambda(fn) {
+    return fn(1,2,3)+3;
+}
+
+print takelambda(t);
+
+print t(1);

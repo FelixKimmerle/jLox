@@ -82,26 +82,15 @@ public class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         // Not found. Assume it is global.
     }
 
-    private void resolveFunction(Stmt.Function function, FunctionType type) {
+    private void resolveFunction(Expr.Function function, FunctionType type) {
         FunctionType enclosingFunction = currentFunction;
         currentFunction = type;
         beginScope();
-        for (Token param : function.params) {
-            declare(param);
-            define(param);
-        }
-        resolve(function.body);
-        endScope();
-        currentFunction = enclosingFunction;
-    }
-
-    private void resolveLambda(Expr.Lambda function, FunctionType type) {
-        FunctionType enclosingFunction = currentFunction;
-        currentFunction = type;
-        beginScope();
-        for (Token param : function.params) {
-            declare(param);
-            define(param);
+        if(function.params != null) {
+            for (Token param : function.params) {
+                declare(param);
+                define(param);
+            }
         }
         resolve(function.body);
         endScope();
@@ -203,8 +192,8 @@ public class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
     }
 
     @Override
-    public Void visitLambdaExpr(Expr.Lambda expr) {
-        resolveLambda(expr, FunctionType.FUNCTION);
+    public Void visitFunctionExpr(Expr.Function expr) {
+        resolveFunction(expr,FunctionType.FUNCTION);
         return null;
     }
 
@@ -234,13 +223,13 @@ public class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
             if (method.name.lexeme.equals("init")) {
                 declaration = FunctionType.INITIALIZER;
             }
-            resolveFunction(method, declaration);
+            resolveFunction(method.function, declaration);
         }
 
         for (Stmt.Function method : stmt.classMethods) {
             beginScope();
             scopes.peek().put("this",true);
-            resolveFunction(method,FunctionType.METHOD);
+            resolveFunction(method.function,FunctionType.METHOD);
             endScope();
         }
 
@@ -261,7 +250,7 @@ public class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         declare(stmt.name);
         define(stmt.name);
 
-        resolveFunction(stmt, FunctionType.FUNCTION);
+        resolveFunction(stmt.function, FunctionType.FUNCTION);
         return null;
     }
 
